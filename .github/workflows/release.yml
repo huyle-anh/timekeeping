@@ -1,6 +1,13 @@
 name: Build & Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      build_frontend:
+        description: 'Build frontend before backend'
+        required: true
+        default: 'true'
+        type: boolean
   push:
     tags: ['v*']
 
