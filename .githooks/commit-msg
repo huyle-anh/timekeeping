@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+SOB="Signed-off-by: HuyAnhLe <anhhuy@live.com>"
+COMMIT_FILE="$1"
+
+# Xóa Co-authored-by aider nếu có
+sed -i '/^Co-authored-by:.*aider/d' "$COMMIT_FILE"
+
+# Append Signed-off-by nếu chưa có
+if ! grep -qF "$SOB" "$COMMIT_FILE"; then
+    echo "" >> "$COMMIT_FILE"
+    echo "$SOB" >> "$COMMIT_FILE"
+fi

@@ -36,31 +36,24 @@ cargo build --release
 ./target/release/timekeeping
 ```
 
-### 2. Frontend
+### 4. Chạy binary release (từ GitHub Releases)
 
 ```bash
-cd frontend
+# Build frontend trước (hoặc tải frontend-dist từ GitHub Releases)
+cd frontend && npm ci && npm run build && cd ..
 
-# Cài dependencies (chỉ làm 1 lần)
-npm install
+# Tải file timekeeping-<os>-<arch> từ GitHub Releases
+# Giải nén (nếu cần) và đặt vào thư mục riêng
 
-# Tạo file cấu hình
+# Tạo file .env từ template
 cp .env.example .env
-# Chỉnh VITE_API_BASE nếu backend không chạy ở port mặc định
+# Chỉnh sửa .env theo môi trường
 
-# Development server (port 5173)
-npm run dev
+# Đảm bảo thư mục frontend-dist/ nằm cùng thư mục với binary
+# (hoặc set biến FRONTEND_DIR trỏ đến đúng đường dẫn)
 
-# Build production
-npm run build
-```
-
-### 3. Desktop app (Tauri) — tùy chọn
-
-```bash
-cargo install tauri-cli
-cargo tauri dev    # development mode
-cargo tauri build  # build production
+# Chạy binary
+./timekeeping-linux-x86_64
 ```
 
 ## Biến môi trường
