@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { useState, useRef, useEffect } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://127.0.0.1:3001';

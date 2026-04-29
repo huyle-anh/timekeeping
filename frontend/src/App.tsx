@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { useState, useEffect, useMemo } from 'react'
 import LoginPopup from './components/LoginPopup'
 import EditEmployeeModal from './components/EditEmployeeModal'
