@@ -13,6 +13,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -41,9 +42,11 @@ jobs:
         with:
           target: ${{ matrix.target }}
 
-      - name: Add cross-compilation target (macOS)
-        if: matrix.os == 'macos-latest' && matrix.target == 'x86_64-apple-darwin'
-        run: rustup target add x86_64-apple-darwin
+      - name: Add cross-compilation targets (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          rustup target add x86_64-apple-darwin
+          rustup target add aarch64-apple-darwin
 
       - name: Build frontend
         run: |
@@ -59,7 +62,13 @@ jobs:
         run: |
           mkdir -p release
           cp "target/${{ matrix.target }}/release/timekeeping${{ matrix.os == 'windows-latest' && '.exe' || '' }}" "release/${{ matrix.artifact_name }}"
-          cp -r frontend/dist release/frontend-dist
+          # Copy frontend build output (Vite outputs to frontend/dist/)
+          if [ -d "frontend/dist" ]; then
+            cp -r frontend/dist release/frontend-dist
+          else
+            echo "Warning: frontend/dist not found, creating empty directory"
+            mkdir -p release/frontend-dist
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

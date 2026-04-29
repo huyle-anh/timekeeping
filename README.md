@@ -36,25 +36,93 @@ cargo build --release
 ./target/release/timekeeping
 ```
 
-### 4. Chạy binary release (từ GitHub Releases)
+### 2. Frontend (development)
 
 ```bash
-# Build frontend trước (hoặc tải frontend-dist từ GitHub Releases)
-cd frontend && npm ci && npm run build && cd ..
+cd frontend
+npm install
+npm run dev
+```
 
-# Tải file timekeeping-<os>-<arch> từ GitHub Releases
-# Giải nén (nếu cần) và đặt vào thư mục riêng
+### 3. Frontend (production build)
 
-# Tạo file .env từ template
+```bash
+cd frontend
+npm ci
+npm run build
+# Output: frontend/dist/
+```
+
+### 4. Chạy binary release (từ GitHub Releases)
+
+#### Bước chung (tất cả hệ điều hành)
+
+```bash
+# 1. Tải artifact từ GitHub Releases
+#    - Vào https://github.com/<user>/<repo>/releases
+#    - Chọn release mong muốn
+#    - Tải file tương ứng với hệ điều hành của bạn
+
+# 2. Giải nén (nếu file là .tar.gz hoặc .zip)
+tar -xzf timekeeping-<os>-<arch>.tar.gz
+# hoặc
+unzip timekeeping-<os>-<arch>.zip
+
+# 3. Tạo file .env từ template
 cp .env.example .env
-# Chỉnh sửa .env theo môi trường
+# Chỉnh sửa .env theo môi trường (bắt buộc đổi JWT_SECRET, ADMIN_PASSWORD)
 
-# Đảm bảo thư mục frontend-dist/ nằm cùng thư mục với binary
-# (hoặc set biến FRONTEND_DIR trỏ đến đúng đường dẫn)
+# 4. Đảm bảo thư mục frontend-dist/ nằm cùng thư mục với binary
+#    (hoặc set biến FRONTEND_DIR trỏ đến đúng đường dẫn)
+```
 
-# Chạy binary
+#### Linux (x86_64)
+
+```bash
+# Cấp quyền thực thi
+chmod +x timekeeping-linux-x86_64
+
+# Chạy
 ./timekeeping-linux-x86_64
 ```
+
+#### Windows (x86_64)
+
+```powershell
+# Mở Command Prompt hoặc PowerShell trong thư mục chứa file
+# Chạy trực tiếp (file .exe)
+timekeeping-windows-x86_64.exe
+
+# Nếu Windows Defender chặn, chọn "Run anyway" hoặc thêm vào exception
+```
+
+#### macOS (Intel - x86_64)
+
+```bash
+# Cấp quyền thực thi
+chmod +x timekeeping-macos-x86_64
+
+# Nếu bị Gatekeeper chặn (cảnh báo "cannot be opened because the developer cannot be verified")
+xattr -d com.apple.quarantine timekeeping-macos-x86_64
+
+# Chạy
+./timekeeping-macos-x86_64
+```
+
+#### macOS (Apple Silicon - ARM)
+
+```bash
+# Cấp quyền thực thi
+chmod +x timekeeping-macos-aarch64
+
+# Nếu bị Gatekeeper chặn
+xattr -d com.apple.quarantine timekeeping-macos-aarch64
+
+# Chạy
+./timekeeping-macos-aarch64
+```
+
+> **Lưu ý**: Trên macOS, bạn có thể cần cho phép ứng dụng trong **System Settings → Privacy & Security** nếu lần đầu chạy.
 
 ## Biến môi trường
 
