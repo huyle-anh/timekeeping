@@ -135,7 +135,7 @@ async fn main() -> anyhow::Result<()> {
         Err(e) => return Err(e).context("Failed to bind address"),
     };
 
-    axum::Server::from_tcp(listener.into_std()?)
+    axum::Server::from_tcp(listener.into_std()?)?
         .serve(app.into_make_service())
         .with_graceful_shutdown(async {
             tokio::signal::ctrl_c()
