@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import LoginPopup from './components/LoginPopup'
 import EditEmployeeModal from './components/EditEmployeeModal'
 import DeleteConfirmModal from './components/DeleteConfirmModal'
@@ -76,6 +76,8 @@ function App() {
   const todayYM = new Date().toISOString().slice(0, 7) // 'YYYY-MM'
   const [hoursMonth, setHoursMonth] = useState<string>(todayYM)
   const [monthAttendance, setMonthAttendance] = useState<AttendanceRecord[]>([])
+
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   // Filter employees based on search term
   const filteredEmployees = useMemo(() => {
@@ -370,18 +372,24 @@ function App() {
     const value = e.target.value
     setEmployeeSearchTerm(value)
     setShowDropdown(true)
-    // Try to parse as ID
+    // Only clear selection when user edits the field; selection is set via handleSelectEmployee
     const parsedId = parseInt(value, 10)
     if (!isNaN(parsedId) && employees.find(emp => emp.id === parsedId)) {
       setSelectedEmployeeId(parsedId)
     } else {
-      setSelectedEmployeeId('')
+      // Don't clear if the current text matches the already-selected employee label
+      const currentLabel = selectedEmployeeId !== ''
+        ? `${selectedEmployeeId} - ${employees.find(e => e.id === selectedEmployeeId)?.name ?? ''}`
+        : ''
+      if (value !== currentLabel) {
+        setSelectedEmployeeId('')
+      }
     }
   }
 
   const handleSearchBlur = () => {
-    // Delay hiding dropdown to allow click on option
-    setTimeout(() => setShowDropdown(false), 200)
+    // Increase delay to 300ms as fallback for iOS Safari where relatedTarget is always null
+    setTimeout(() => setShowDropdown(false), 300)
   }
 
   const handleSearchFocus = () => {
@@ -461,6 +469,7 @@ function App() {
             />
             {showDropdown && filteredEmployees.length > 0 && (
               <div
+                ref={dropdownRef}
                 style={{
                   position: 'absolute',
                   top: '100%',
@@ -477,7 +486,13 @@ function App() {
                 {filteredEmployees.map(emp => (
                   <div
                     key={emp.id}
-                    onClick={() => handleSelectEmployee(emp)}
+                    // onMouseDown fires before onBlur, so we can select before the dropdown hides.
+                    // preventDefault stops the input from losing focus on desktop (avoids race condition).
+                    // On iOS Safari the keyboard stays open — acceptable trade-off vs. broken selection.
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      handleSelectEmployee(emp)
+                    }}
                     style={{
                       padding: '0.5rem',
                       cursor: 'pointer',
