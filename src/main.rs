@@ -118,11 +118,31 @@ async fn main() -> anyhow::Result<()> {
         .layer(cors)
         .with_state(state);
 
-    // Start server
+    // Start server with graceful shutdown
     let addr = cfg.bind_addr;
     tracing::info!("Starting server on {}", addr);
-    axum::Server::bind(&addr)
+
+    // Try to bind, if address already in use, wait and retry once
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(listener) => listener,
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            tracing::warn!("Address {} already in use, waiting 2 seconds and retrying...", addr);
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            tokio::net::TcpListener::bind(&addr)
+                .await
+                .context("Failed to bind after retry")?
+        }
+        Err(e) => return Err(e).context("Failed to bind address"),
+    };
+
+    axum::Server::from_tcp(listener.into_std()?)
         .serve(app.into_make_service())
+        .with_graceful_shutdown(async {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("failed to install Ctrl+C handler");
+            tracing::info!("Shutdown signal received, stopping server...");
+        })
         .await
         .context("Server error")?;
 
