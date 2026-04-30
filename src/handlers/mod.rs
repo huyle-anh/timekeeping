@@ -120,11 +120,14 @@ pub async fn create_employee(
         .get()
         .map_err(|e| AppError::Database(e))?;
 
+    // Normalize device_id: treat empty string as absent to avoid UNIQUE constraint issues
+    let device_id = payload.device_id.as_deref().filter(|s| !s.is_empty());
+
     let id = employee_repo::create(
         &conn,
         &payload.name,
         &payload.role,
-        payload.device_id.as_deref(),
+        device_id,
         &hourly_rate,
     )
     .map_err(|e| AppError::Internal(format!("Failed to create employee: {}", e)))?;
@@ -317,10 +320,23 @@ pub async fn check_in(
         .map_err(|e| AppError::Internal(format!("Failed to verify employee: {}", e)))?
         .ok_or_else(|| AppError::NotFound(format!("Employee {} not found", payload.employee_id)))?;
 
+    // Validate: employee must not already be checked in
+    let last_event = attendance_repo::get_last_event_type(&conn, payload.employee_id)
+        .map_err(|e| AppError::Internal(format!("Failed to read last event: {}", e)))?;
+    if last_event.as_deref() == Some("check_in") {
+        return Err(AppError::Validation(format!(
+            "Employee {} is already checked in. Please check out first.",
+            payload.employee_id
+        )));
+    }
+
+    // Normalize device_id: treat empty string as absent
+    let device_id = payload.device_id.as_deref().filter(|s| !s.is_empty());
+
     let log = attendance_repo::create_check_in(
         &conn,
         payload.employee_id,
-        payload.device_id.as_deref(),
+        device_id,
         &correlation_id,
     )
     .map_err(|e| AppError::Internal(format!("Failed to create check-in: {}", e)))?;
@@ -351,10 +367,23 @@ pub async fn check_out(
         .map_err(|e| AppError::Internal(format!("Failed to verify employee: {}", e)))?
         .ok_or_else(|| AppError::NotFound(format!("Employee {} not found", payload.employee_id)))?;
 
+    // Validate: employee must have an open check-in before checking out
+    let last_event = attendance_repo::get_last_event_type(&conn, payload.employee_id)
+        .map_err(|e| AppError::Internal(format!("Failed to read last event: {}", e)))?;
+    if last_event.as_deref() != Some("check_in") {
+        return Err(AppError::Validation(format!(
+            "Employee {} has no open check-in. Please check in first.",
+            payload.employee_id
+        )));
+    }
+
+    // Normalize device_id: treat empty string as absent
+    let device_id = payload.device_id.as_deref().filter(|s| !s.is_empty());
+
     let log = attendance_repo::create_check_out(
         &conn,
         payload.employee_id,
-        payload.device_id.as_deref(),
+        device_id,
         &correlation_id,
     )
     .map_err(|e| AppError::Internal(format!("Failed to create check-out: {}", e)))?;

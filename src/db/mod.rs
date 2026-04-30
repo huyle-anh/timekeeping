@@ -145,7 +145,8 @@ pub mod attendance_repo {
         correlation_id: &str,
     ) -> Result<AttendanceLog> {
         conn.execute(
-            "INSERT INTO attendance_logs (employee_id, event_type, device_id, correlation_id) VALUES (?1, 'check_in', ?2, ?3)",
+            "INSERT INTO attendance_logs (employee_id, event_type, device_id, correlation_id, timestamp) \
+             VALUES (?1, 'check_in', ?2, ?3, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
             params![employee_id, device_id, correlation_id],
         )
         .context("Failed to insert check-in")?;
@@ -163,7 +164,8 @@ pub mod attendance_repo {
         correlation_id: &str,
     ) -> Result<AttendanceLog> {
         conn.execute(
-            "INSERT INTO attendance_logs (employee_id, event_type, device_id, correlation_id) VALUES (?1, 'check_out', ?2, ?3)",
+            "INSERT INTO attendance_logs (employee_id, event_type, device_id, correlation_id, timestamp) \
+             VALUES (?1, 'check_out', ?2, ?3, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
             params![employee_id, device_id, correlation_id],
         )
         .context("Failed to insert check-out")?;
@@ -192,6 +194,27 @@ pub mod attendance_repo {
             .context("Failed to query attendance log")?;
 
         Ok(log)
+    }
+
+    /// Get the most recent event_type for an employee, or None if no records exist.
+    #[instrument(skip(conn))]
+    pub fn get_last_event_type(conn: &Connection, employee_id: i64) -> Result<Option<String>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT event_type FROM attendance_logs \
+                 WHERE employee_id = ?1 ORDER BY timestamp DESC, id DESC LIMIT 1",
+            )
+            .context("Failed to prepare last event query")?;
+
+        let mut rows = stmt
+            .query_map(params![employee_id], |row| row.get(0))
+            .context("Failed to query last event type")?;
+
+        match rows.next() {
+            Some(Ok(event_type)) => Ok(Some(event_type)),
+            Some(Err(e)) => Err(e.into()),
+            None => Ok(None),
+        }
     }
 
     /// List attendance logs, optionally filtered by employee_id, date (YYYY-MM-DD), or month (YYYY-MM).

@@ -24,6 +24,17 @@ interface AttendanceRecord {
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://127.0.0.1:3001'
 
+// Normalize SQLite timestamps to valid ISO 8601 so new Date() parses correctly
+// in all browsers. Handles both "YYYY-MM-DD HH:MM:SS" (legacy) and
+// "YYYY-MM-DDTHH:MM:SSZ" (new format) transparently.
+function parseTimestamp(ts: string): Date {
+  if (!ts.includes('T')) {
+    // Legacy format: "2024-01-15 10:30:00" → "2024-01-15T10:30:00Z"
+    return new Date(ts.replace(' ', 'T') + 'Z')
+  }
+  return new Date(ts)
+}
+
 function App() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([])
@@ -103,9 +114,9 @@ function App() {
       let pendingCheckIn: Date | null = null
       for (const rec of recs) {
         if (rec.event_type === 'check_in') {
-          pendingCheckIn = new Date(rec.timestamp)
+          pendingCheckIn = parseTimestamp(rec.timestamp)
         } else if (rec.event_type === 'check_out' && pendingCheckIn) {
-          const diff = (new Date(rec.timestamp).getTime() - pendingCheckIn.getTime()) / 60000
+          const diff = (parseTimestamp(rec.timestamp).getTime() - pendingCheckIn.getTime()) / 60000
           if (diff > 0) total += diff
           pendingCheckIn = null
         }
@@ -300,6 +311,7 @@ function App() {
         throw new Error(err.error || `HTTP ${res.status}`)
       }
       await fetchAttendance(attendanceDate)
+      await fetchMonthlyAttendance(hoursMonth)
       if (selectedEmployeeForAttendance === selectedEmployeeId) {
         await fetchEmployeeAttendance(selectedEmployeeId, employeeAttendanceDate)
       }
@@ -324,6 +336,7 @@ function App() {
         throw new Error(err.error || `HTTP ${res.status}`)
       }
       await fetchAttendance(attendanceDate)
+      await fetchMonthlyAttendance(hoursMonth)
       if (selectedEmployeeForAttendance === selectedEmployeeId) {
         await fetchEmployeeAttendance(selectedEmployeeId, employeeAttendanceDate)
       }

@@ -19,11 +19,11 @@ CREATE TABLE IF NOT EXISTS attendance_logs (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     employee_id     INTEGER NOT NULL REFERENCES employees(id),
     event_type      TEXT NOT NULL CHECK(event_type IN ('check_in', 'check_out')),
-    timestamp       TEXT NOT NULL DEFAULT (datetime('now')),
+    timestamp       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     ip_address      TEXT,
     device_id       TEXT,
     correlation_id  TEXT NOT NULL,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_attendance_employee_date
@@ -189,6 +189,13 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         tx.execute_batch(sql)
             .with_context(|| format!("Migration step {} failed", i + 1))?;
     }
+
+    // Normalize legacy timestamps: convert "YYYY-MM-DD HH:MM:SS" → "YYYY-MM-DDTHH:MM:SSZ"
+    tx.execute_batch(
+        "UPDATE attendance_logs \
+         SET timestamp = replace(timestamp, ' ', 'T') || 'Z' \
+         WHERE instr(timestamp, 'T') = 0;"
+    ).context("Failed to normalize attendance timestamps")?;
 
     tx.commit().context("Failed to commit migration transaction")?;
 
