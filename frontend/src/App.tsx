@@ -382,20 +382,20 @@ function App() {
         ? `${selectedEmployeeId} - ${employees.find(e => e.id === selectedEmployeeId)?.name ?? ''}`
         : ''
       if (value !== currentLabel) {
-        setSelectedEmployeeId('')
+        // Don't clear selectedEmployeeId here; keep it until user selects a different employee
+        // setSelectedEmployeeId('')
       }
     }
   }
 
   const handleSearchBlur = () => {
-    // Increase delay to 300ms as fallback for iOS Safari where relatedTarget is always null
-    setTimeout(() => setShowDropdown(false), 300)
+    // Increase delay to 500ms to allow onMouseDown to fire before hiding dropdown
+    setTimeout(() => setShowDropdown(false), 500)
   }
 
   const handleSearchFocus = () => {
-    if (employeeSearchTerm.trim()) {
-      setShowDropdown(true)
-    }
+    // Always show dropdown when input is focused, even if empty
+    setShowDropdown(true)
   }
 
   return (
@@ -465,11 +465,13 @@ function App() {
               onChange={handleSearchChange}
               onFocus={handleSearchFocus}
               onBlur={handleSearchBlur}
+              autoComplete="off"
               style={{ padding: '0.5rem', minWidth: '250px' }}
             />
             {showDropdown && filteredEmployees.length > 0 && (
               <div
                 ref={dropdownRef}
+                onMouseDown={(e) => e.preventDefault()} // Prevent blur from hiding dropdown
                 style={{
                   position: 'absolute',
                   top: '100%',
