@@ -40,7 +40,7 @@ impl Config {
             .context("DB_POOL_SIZE must be a valid u32")?;
 
         let bind_addr: SocketAddr = std::env::var("BIND_ADDR")
-            .unwrap_or_else(|_| "0.0.0.0:3000".to_string())
+            .unwrap_or_else(|_| "0.0.0.0:3001".to_string())
             .parse()
             .context("BIND_ADDR must be a valid SocketAddr")?;
 
