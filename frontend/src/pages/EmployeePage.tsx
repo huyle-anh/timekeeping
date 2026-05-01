@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import EditEmployeeModal from '../components/EditEmployeeModal'
 import DeleteConfirmModal from '../components/DeleteConfirmModal'
+import { getApiBase } from '../api'
 
 interface Employee {
   id: number
@@ -16,7 +17,7 @@ interface Employee {
   updated_at: string
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
+const API_BASE = getApiBase()
 
 interface EmployeePageProps {
   token: string | null

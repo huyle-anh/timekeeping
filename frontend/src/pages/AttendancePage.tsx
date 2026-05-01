@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { getApiBase } from '../api'
 
 interface Employee {
   id: number
@@ -18,7 +19,7 @@ interface AttendanceRecord {
   correlation_id: string
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
+const API_BASE = getApiBase()
 
 function parseTimestamp(ts: string): Date {
   if (!ts.includes('T')) {
