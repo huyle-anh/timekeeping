@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 interface EditEmployeeModalProps {
-  employee: { id: number; name: string; role: string; hourly_rate: string }
+  employee: { id: number; name: string; role: string; hourly_rate: string | null }
   name: string
   role: string
   hourlyRate: string
