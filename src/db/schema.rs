@@ -4,13 +4,15 @@ use rusqlite::Connection;
 /// SQL statements to create all tables in the correct dependency order.
 const CREATE_EMPLOYEES: &str = "
 CREATE TABLE IF NOT EXISTS employees (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL,
-    role        TEXT NOT NULL CHECK(role IN ('Admin', 'Manager', 'Staff')),
-    device_id   TEXT UNIQUE,
-    hourly_rate TEXT NOT NULL,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    role            TEXT NOT NULL CHECK(role IN ('Admin', 'Manager', 'Staff')),
+    device_id       TEXT UNIQUE,
+    pay_type        TEXT NOT NULL DEFAULT 'Hourly' CHECK(pay_type IN ('Hourly', 'Salary')),
+    hourly_rate     TEXT,
+    monthly_salary  TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 ";
 
@@ -197,6 +199,15 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
          WHERE instr(timestamp, 'T') = 0;"
     ).context("Failed to normalize attendance timestamps")?;
 
+    // Migration: add new employee columns if they don't exist yet (idempotent)
+    for sql in [
+        "ALTER TABLE employees ADD COLUMN pay_type TEXT NOT NULL DEFAULT 'Hourly'",
+        "ALTER TABLE employees ADD COLUMN monthly_salary TEXT",
+    ] {
+        // Ignore "duplicate column" errors — means migration already ran
+        let _ = tx.execute_batch(sql);
+    }
+
     tx.commit().context("Failed to commit migration transaction")?;
 
     Ok(())
@@ -239,6 +250,19 @@ mod tests {
         ];
 
         assert_eq!(tables, expected, "All expected tables must be created");
+
+        // Verify employees table has new columns
+        let columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(employees)")
+            .unwrap()
+            .query_map([], |row| row.get(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        assert!(columns.contains(&"pay_type".to_string()), "pay_type column must exist");
+        assert!(columns.contains(&"monthly_salary".to_string()), "monthly_salary column must exist");
+        assert!(columns.contains(&"hourly_rate".to_string()), "hourly_rate column must exist");
     }
 
     #[test]

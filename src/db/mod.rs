@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use std::str::FromStr;
 use tracing::instrument;
 
@@ -10,7 +11,9 @@ pub struct Employee {
     pub name: String,
     pub role: String,
     pub device_id: Option<String>,
-    pub hourly_rate: Decimal,
+    pub pay_type: String,
+    pub hourly_rate: Option<Decimal>,
+    pub monthly_salary: Option<Decimal>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -26,12 +29,15 @@ pub mod employee_repo {
         name: &str,
         role: &str,
         device_id: Option<&str>,
-        hourly_rate: &Decimal,
+        pay_type: &str,
+        hourly_rate: Option<&Decimal>,
+        monthly_salary: Option<&Decimal>,
     ) -> Result<i64> {
-        let rate_str = hourly_rate.to_string();
+        let rate_str = hourly_rate.map(|r| r.to_string());
+        let salary_str = monthly_salary.map(|s| s.to_string());
         conn.execute(
-            "INSERT INTO employees (name, role, device_id, hourly_rate) VALUES (?1, ?2, ?3, ?4)",
-            params![name, role, device_id, rate_str],
+            "INSERT INTO employees (name, role, device_id, pay_type, hourly_rate, monthly_salary) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![name, role, device_id, pay_type, rate_str, salary_str],
         )
         .context("Failed to insert employee")?;
         Ok(conn.last_insert_rowid())
@@ -41,22 +47,30 @@ pub mod employee_repo {
     #[instrument(skip(conn))]
     pub fn get_by_id(conn: &Connection, id: i64) -> Result<Option<Employee>> {
         let mut stmt = conn
-            .prepare("SELECT id, name, role, device_id, hourly_rate, created_at, updated_at FROM employees WHERE id = ?1")
+            .prepare("SELECT id, name, role, device_id, pay_type, hourly_rate, monthly_salary, created_at, updated_at FROM employees WHERE id = ?1")
             .context("Failed to prepare get employee statement")?;
 
         let mut rows = stmt
             .query_map(params![id], |row| {
-                let rate_str: String = row.get(4)?;
-                let rate = Decimal::from_str(&rate_str)
-                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+                let pay_type: String = row.get(4)?;
+                let rate_str: Option<String> = row.get(5)?;
+                let salary_str: Option<String> = row.get(6)?;
+                let hourly_rate = rate_str
+                    .as_deref()
+                    .and_then(|s| Decimal::from_str(s).ok());
+                let monthly_salary = salary_str
+                    .as_deref()
+                    .and_then(|s| Decimal::from_str(s).ok());
                 Ok(Employee {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     role: row.get(2)?,
                     device_id: row.get(3)?,
-                    hourly_rate: rate,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    pay_type,
+                    hourly_rate,
+                    monthly_salary,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
                 })
             })
             .context("Failed to query employee")?;
@@ -72,22 +86,30 @@ pub mod employee_repo {
     #[instrument(skip(conn))]
     pub fn list(conn: &Connection) -> Result<Vec<Employee>> {
         let mut stmt = conn
-            .prepare("SELECT id, name, role, device_id, hourly_rate, created_at, updated_at FROM employees ORDER BY id")
+            .prepare("SELECT id, name, role, device_id, pay_type, hourly_rate, monthly_salary, created_at, updated_at FROM employees ORDER BY id")
             .context("Failed to prepare list employees statement")?;
 
         let rows = stmt
             .query_map([], |row| {
-                let rate_str: String = row.get(4)?;
-                let rate = Decimal::from_str(&rate_str)
-                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+                let pay_type: String = row.get(4)?;
+                let rate_str: Option<String> = row.get(5)?;
+                let salary_str: Option<String> = row.get(6)?;
+                let hourly_rate = rate_str
+                    .as_deref()
+                    .and_then(|s| Decimal::from_str(s).ok());
+                let monthly_salary = salary_str
+                    .as_deref()
+                    .and_then(|s| Decimal::from_str(s).ok());
                 Ok(Employee {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     role: row.get(2)?,
                     device_id: row.get(3)?,
-                    hourly_rate: rate,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    pay_type,
+                    hourly_rate,
+                    monthly_salary,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
                 })
             })
             .context("Failed to query employees")?;
@@ -107,16 +129,98 @@ pub mod employee_repo {
         name: &str,
         role: &str,
         device_id: Option<&str>,
-        hourly_rate: &Decimal,
+        pay_type: &str,
+        hourly_rate: Option<&Decimal>,
+        monthly_salary: Option<&Decimal>,
     ) -> Result<bool> {
-        let rate_str = hourly_rate.to_string();
+        let rate_str = hourly_rate.map(|r| r.to_string());
+        let salary_str = monthly_salary.map(|s| s.to_string());
         let affected = conn
             .execute(
-                "UPDATE employees SET name = ?1, role = ?2, device_id = ?3, hourly_rate = ?4, updated_at = datetime('now') WHERE id = ?5",
-                params![name, role, device_id, rate_str, id],
+                "UPDATE employees SET name = ?1, role = ?2, device_id = ?3, pay_type = ?4, hourly_rate = ?5, monthly_salary = ?6, updated_at = datetime('now') WHERE id = ?7",
+                params![name, role, device_id, pay_type, rate_str, salary_str, id],
             )
             .context("Failed to update employee")?;
         Ok(affected > 0)
+    }
+
+    /// Get total hours worked and total salary for an employee in a given month.
+    /// Returns (hours_worked, total_salary).
+    /// For Salary employees, hours_worked is 0.0 and total_salary is monthly_salary.
+    /// For Hourly employees, hours_worked is calculated from attendance logs.
+    /// If no attendance data exists, returns (0.0, None).
+    pub fn get_hours_and_salary(
+        conn: &Connection,
+        employee_id: i64,
+        month: &str,
+    ) -> Result<(f64, Option<Decimal>)> {
+        use crate::db::attendance_repo;
+
+        // Get employee to determine pay_type
+        let emp = match get_by_id(conn, employee_id)? {
+            Some(e) => e,
+            None => return Ok((0.0, None)),
+        };
+
+        if emp.pay_type == "Salary" {
+            return Ok((0.0, emp.monthly_salary));
+        }
+
+        // Get attendance logs for this employee in the given month
+        let logs = attendance_repo::list(conn, Some(employee_id), None, Some(month))
+            .context("Failed to list attendance for hours calculation")?;
+
+        if logs.is_empty() {
+            return Ok((0.0, None));
+        }
+
+        let mut total_minutes = 0.0;
+        let mut pending_check_in: Option<chrono::NaiveDateTime> = None;
+
+        for log in &logs {
+            let ts = parse_timestamp(&log.timestamp);
+            if log.event_type == "check_in" {
+                pending_check_in = Some(ts);
+            } else if log.event_type == "check_out" {
+                if let Some(check_in) = pending_check_in {
+                    let diff = (ts - check_in).num_minutes() as f64;
+                    if diff > 0.0 {
+                        total_minutes += diff;
+                    }
+                    pending_check_in = None;
+                }
+            }
+        }
+
+        // If there's a pending check-in (no check-out yet), calculate up to now
+        if let Some(check_in) = pending_check_in {
+            let now = chrono::Utc::now().naive_utc();
+            let diff = (now - check_in).num_minutes() as f64;
+            if diff > 0.0 {
+                total_minutes += diff;
+            }
+        }
+
+        let hours = total_minutes / 60.0;
+        let salary = if hours > 0.0 {
+            emp.hourly_rate.map(|rate| {
+                let hours_dec = Decimal::from_f64(hours).unwrap_or(Decimal::ZERO);
+                rate * hours_dec
+            })
+        } else {
+            None
+        };
+
+        Ok((hours, salary))
+    }
+
+    fn parse_timestamp(ts: &str) -> chrono::NaiveDateTime {
+        if ts.contains('T') {
+            chrono::NaiveDateTime::parse_from_str(ts, "%Y-%m-%dT%H:%M:%SZ")
+                .unwrap_or_else(|_| chrono::NaiveDateTime::parse_from_str(ts, "%Y-%m-%dT%H:%M:%S").unwrap())
+        } else {
+            chrono::NaiveDateTime::parse_from_str(ts, "%Y-%m-%d %H:%M:%S").unwrap()
+        }
     }
 }
 

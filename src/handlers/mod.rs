@@ -13,7 +13,6 @@ use uuid::Uuid;
 
 use crate::db::employee_repo;
 use crate::db::attendance_repo;
-use crate::db::Employee;
 use crate::db::AttendanceLog;
 use crate::errors::AppError;
 use crate::AppState;
@@ -63,7 +62,9 @@ pub struct CreateEmployeeRequest {
     pub name: String,
     pub role: String,
     pub device_id: Option<String>,
-    pub hourly_rate: String, // decimal string
+    pub pay_type: String,             // "Hourly" or "Salary"
+    pub hourly_rate: Option<String>,  // required when pay_type == "Hourly"
+    pub monthly_salary: Option<String>, // required when pay_type == "Salary"
 }
 
 #[derive(Debug, Serialize)]
@@ -72,23 +73,13 @@ pub struct EmployeeResponse {
     pub name: String,
     pub role: String,
     pub device_id: Option<String>,
-    pub hourly_rate: String,
+    pub pay_type: String,
+    pub hourly_rate: Option<String>,
+    pub monthly_salary: Option<String>,
+    pub hours_worked_this_month: Option<f64>,
+    pub total_salary_this_month: Option<String>,
     pub created_at: String,
     pub updated_at: String,
-}
-
-impl From<Employee> for EmployeeResponse {
-    fn from(e: Employee) -> Self {
-        EmployeeResponse {
-            id: e.id,
-            name: e.name,
-            role: e.role,
-            device_id: e.device_id,
-            hourly_rate: e.hourly_rate.to_string(),
-            created_at: e.created_at,
-            updated_at: e.updated_at,
-        }
-    }
 }
 
 /// POST /employees (requires admin)
@@ -109,11 +100,28 @@ pub async fn create_employee(
         )));
     }
 
-    // Parse hourly_rate as Decimal
-    let hourly_rate: Decimal = payload
+    // Validate pay_type
+    let valid_pay_types = ["Hourly", "Salary"];
+    if !valid_pay_types.contains(&payload.pay_type.as_str()) {
+        return Err(AppError::Validation(format!(
+            "Invalid pay_type '{}'. Must be 'Hourly' or 'Salary'",
+            payload.pay_type
+        )));
+    }
+
+    let hourly_rate: Option<Decimal> = payload
         .hourly_rate
-        .parse()
-        .map_err(|e| AppError::Validation(format!("Invalid hourly_rate: {}", e)))?;
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.parse().map_err(|e| AppError::Validation(format!("Invalid hourly_rate: {}", e))))
+        .transpose()?;
+
+    let monthly_salary: Option<Decimal> = payload
+        .monthly_salary
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.parse().map_err(|e| AppError::Validation(format!("Invalid monthly_salary: {}", e))))
+        .transpose()?;
 
     let conn = state
         .pool
@@ -128,7 +136,9 @@ pub async fn create_employee(
         &payload.name,
         &payload.role,
         device_id,
-        &hourly_rate,
+        &payload.pay_type,
+        hourly_rate.as_ref(),
+        monthly_salary.as_ref(),
     )
     .map_err(|e| AppError::Internal(format!("Failed to create employee: {}", e)))?;
 
@@ -136,9 +146,26 @@ pub async fn create_employee(
         .map_err(|e| AppError::Internal(format!("Failed to fetch created employee: {}", e)))?
         .ok_or_else(|| AppError::Internal("Created employee not found".to_string()))?;
 
+    let current_month = chrono::Utc::now().format("%Y-%m").to_string();
+    let (hours, salary) = employee_repo::get_hours_and_salary(&conn, employee.id, &current_month)
+        .unwrap_or((0.0, None));
+    let is_hourly = employee.pay_type == "Hourly";
+
     tracing::info!(correlation_id = %correlation_id, employee_id = %id, "Employee created");
 
-    Ok((StatusCode::CREATED, Json(EmployeeResponse::from(employee))))
+    Ok((StatusCode::CREATED, Json(EmployeeResponse {
+        id: employee.id,
+        name: employee.name,
+        role: employee.role,
+        device_id: employee.device_id,
+        pay_type: employee.pay_type,
+        hourly_rate: employee.hourly_rate.map(|r| r.to_string()),
+        monthly_salary: employee.monthly_salary.map(|s| s.to_string()),
+        hours_worked_this_month: if is_hourly { Some(hours) } else { None },
+        total_salary_this_month: salary.map(|s| s.to_string()),
+        created_at: employee.created_at,
+        updated_at: employee.updated_at,
+    })))
 }
 
 /// GET /employees
@@ -154,7 +181,29 @@ pub async fn list_employees(
     let employees = employee_repo::list(&conn)
         .map_err(|e| AppError::Internal(format!("Failed to list employees: {}", e)))?;
 
-    let response: Vec<EmployeeResponse> = employees.into_iter().map(EmployeeResponse::from).collect();
+    let current_month = chrono::Utc::now().format("%Y-%m").to_string();
+
+    let response: Vec<EmployeeResponse> = employees
+        .into_iter()
+        .map(|emp| {
+            let (hours, salary) = employee_repo::get_hours_and_salary(&conn, emp.id, &current_month)
+                .unwrap_or((0.0, None));
+            let is_hourly = emp.pay_type == "Hourly";
+            EmployeeResponse {
+                id: emp.id,
+                name: emp.name,
+                role: emp.role,
+                device_id: emp.device_id,
+                pay_type: emp.pay_type,
+                hourly_rate: emp.hourly_rate.map(|r| r.to_string()),
+                monthly_salary: emp.monthly_salary.map(|s| s.to_string()),
+                hours_worked_this_month: if is_hourly { Some(hours) } else { None },
+                total_salary_this_month: salary.map(|s| s.to_string()),
+                created_at: emp.created_at,
+                updated_at: emp.updated_at,
+            }
+        })
+        .collect();
     Ok(Json(response))
 }
 
@@ -173,7 +222,24 @@ pub async fn get_employee(
         .map_err(|e| AppError::Internal(format!("Failed to get employee: {}", e)))?
         .ok_or_else(|| AppError::NotFound(format!("Employee with id {} not found", id)))?;
 
-    Ok(Json(EmployeeResponse::from(employee)))
+    let current_month = chrono::Utc::now().format("%Y-%m").to_string();
+    let (hours, salary) = employee_repo::get_hours_and_salary(&conn, employee.id, &current_month)
+        .unwrap_or((0.0, None));
+    let is_hourly = employee.pay_type == "Hourly";
+
+    Ok(Json(EmployeeResponse {
+        id: employee.id,
+        name: employee.name,
+        role: employee.role,
+        device_id: employee.device_id,
+        pay_type: employee.pay_type,
+        hourly_rate: employee.hourly_rate.map(|r| r.to_string()),
+        monthly_salary: employee.monthly_salary.map(|s| s.to_string()),
+        hours_worked_this_month: if is_hourly { Some(hours) } else { None },
+        total_salary_this_month: salary.map(|s| s.to_string()),
+        created_at: employee.created_at,
+        updated_at: employee.updated_at,
+    }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -181,7 +247,9 @@ pub struct UpdateEmployeeRequest {
     pub name: String,
     pub role: String,
     pub device_id: Option<String>,
-    pub hourly_rate: String,
+    pub pay_type: String,
+    pub hourly_rate: Option<String>,
+    pub monthly_salary: Option<String>,
 }
 
 /// DELETE /employees/:id (requires admin)
@@ -231,23 +299,45 @@ pub async fn update_employee(
         )));
     }
 
-    let hourly_rate: Decimal = payload
+    // Validate pay_type
+    let valid_pay_types = ["Hourly", "Salary"];
+    if !valid_pay_types.contains(&payload.pay_type.as_str()) {
+        return Err(AppError::Validation(format!(
+            "Invalid pay_type '{}'. Must be 'Hourly' or 'Salary'",
+            payload.pay_type
+        )));
+    }
+
+    let hourly_rate: Option<Decimal> = payload
         .hourly_rate
-        .parse()
-        .map_err(|e| AppError::Validation(format!("Invalid hourly_rate: {}", e)))?;
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.parse().map_err(|e| AppError::Validation(format!("Invalid hourly_rate: {}", e))))
+        .transpose()?;
+
+    let monthly_salary: Option<Decimal> = payload
+        .monthly_salary
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.parse().map_err(|e| AppError::Validation(format!("Invalid monthly_salary: {}", e))))
+        .transpose()?;
 
     let conn = state
         .pool
         .get()
         .map_err(|e| AppError::Database(e))?;
 
+    let device_id = payload.device_id.as_deref().filter(|s| !s.is_empty());
+
     let updated = employee_repo::update(
         &conn,
         id,
         &payload.name,
         &payload.role,
-        payload.device_id.as_deref(),
-        &hourly_rate,
+        device_id,
+        &payload.pay_type,
+        hourly_rate.as_ref(),
+        monthly_salary.as_ref(),
     )
     .map_err(|e| AppError::Internal(format!("Failed to update employee: {}", e)))?;
 
@@ -259,9 +349,26 @@ pub async fn update_employee(
         .map_err(|e| AppError::Internal(format!("Failed to fetch updated employee: {}", e)))?
         .ok_or_else(|| AppError::Internal("Updated employee not found".to_string()))?;
 
+    let current_month = chrono::Utc::now().format("%Y-%m").to_string();
+    let (hours, salary) = employee_repo::get_hours_and_salary(&conn, employee.id, &current_month)
+        .unwrap_or((0.0, None));
+    let is_hourly = employee.pay_type == "Hourly";
+
     tracing::info!(correlation_id = %correlation_id, employee_id = %id, "Employee updated");
 
-    Ok(Json(EmployeeResponse::from(employee)))
+    Ok(Json(EmployeeResponse {
+        id: employee.id,
+        name: employee.name,
+        role: employee.role,
+        device_id: employee.device_id,
+        pay_type: employee.pay_type,
+        hourly_rate: employee.hourly_rate.map(|r| r.to_string()),
+        monthly_salary: employee.monthly_salary.map(|s| s.to_string()),
+        hours_worked_this_month: if is_hourly { Some(hours) } else { None },
+        total_salary_this_month: salary.map(|s| s.to_string()),
+        created_at: employee.created_at,
+        updated_at: employee.updated_at,
+    }))
 }
 
 // ── Attendance (Check-in/Check-out) ────────────────────────────

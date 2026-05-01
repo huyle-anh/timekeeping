@@ -7,7 +7,11 @@ interface Employee {
   name: string
   role: string
   device_id: string | null
-  hourly_rate: string
+  pay_type: string
+  hourly_rate: string | null
+  monthly_salary: string | null
+  hours_worked_this_month: number | null
+  total_salary_this_month: string | null
   created_at: string
   updated_at: string
 }
@@ -26,25 +30,36 @@ function EmployeePage({ token }: EmployeePageProps) {
   // Employee form
   const [name, setName] = useState('')
   const [role, setRole] = useState('Staff')
+  const [payType, setPayType] = useState('Hourly')
   const [hourlyRate, setHourlyRate] = useState('')
+  const [monthlySalary, setMonthlySalary] = useState('')
 
   // Edit modal state
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [editName, setEditName] = useState('')
   const [editRole, setEditRole] = useState('Staff')
+  const [editPayType, setEditPayType] = useState('Hourly')
   const [editHourlyRate, setEditHourlyRate] = useState('')
+  const [editMonthlySalary, setEditMonthlySalary] = useState('')
+
+  // Month selector
+  const todayYM = new Date().toISOString().slice(0, 7)
+  const [hoursMonth, setHoursMonth] = useState<string>(todayYM)
 
   // Delete confirm state
   const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null)
 
   useEffect(() => {
-    fetchEmployees()
-  }, [])
+    fetchEmployees(hoursMonth)
+  }, [hoursMonth])
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = async (month?: string) => {
     try {
       setLoading(true)
-      const res = await fetch(`${API_BASE}/employees`)
+      const url = month
+        ? `${API_BASE}/employees?month=${encodeURIComponent(month)}`
+        : `${API_BASE}/employees`
+      const res = await fetch(url)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setEmployees(data)
@@ -60,23 +75,31 @@ function EmployeePage({ token }: EmployeePageProps) {
     setEditingEmployee(emp)
     setEditName(emp.name)
     setEditRole(emp.role)
-    setEditHourlyRate(emp.hourly_rate)
+    setEditPayType(emp.pay_type)
+    setEditHourlyRate(emp.hourly_rate ?? '')
+    setEditMonthlySalary(emp.monthly_salary ?? '')
   }
 
   const handleSaveEdit = async () => {
     if (!editingEmployee || !token) return
     try {
+      const body: Record<string, unknown> = {
+        name: editName,
+        role: editRole,
+        pay_type: editPayType,
+      }
+      if (editPayType === 'Hourly') {
+        body.hourly_rate = editHourlyRate
+      } else {
+        body.monthly_salary = editMonthlySalary
+      }
       const res = await fetch(`${API_BASE}/employees/${editingEmployee.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          name: editName,
-          role: editRole,
-          hourly_rate: editHourlyRate,
-        }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -118,13 +141,23 @@ function EmployeePage({ token }: EmployeePageProps) {
       return
     }
     try {
+      const body: Record<string, unknown> = {
+        name,
+        role,
+        pay_type: payType,
+      }
+      if (payType === 'Hourly') {
+        body.hourly_rate = hourlyRate
+      } else {
+        body.monthly_salary = monthlySalary
+      }
       const res = await fetch(`${API_BASE}/employees`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ name, role, hourly_rate: hourlyRate }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -132,6 +165,7 @@ function EmployeePage({ token }: EmployeePageProps) {
       }
       setName('')
       setHourlyRate('')
+      setMonthlySalary('')
       await fetchEmployees()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Không thể tạo nhân viên')
@@ -153,7 +187,7 @@ function EmployeePage({ token }: EmployeePageProps) {
       {token && (
         <form onSubmit={createEmployee} style={{ marginBottom: '2rem' }}>
           <h2>Thêm nhân viên</h2>
-          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <input
               placeholder="Họ và tên"
               value={name}
@@ -165,21 +199,47 @@ function EmployeePage({ token }: EmployeePageProps) {
               <option value="Manager">Quản lý</option>
               <option value="Admin">Quản trị viên</option>
             </select>
-            <input
-              placeholder="Lương/giờ"
-              type="number"
-              step="0.01"
-              value={hourlyRate}
-              onChange={(e) => setHourlyRate(e.target.value)}
-              required
-            />
+            <select value={payType} onChange={(e) => setPayType(e.target.value)}>
+              <option value="Hourly">Theo giờ</option>
+              <option value="Salary">Lương tháng</option>
+            </select>
+            {payType === 'Hourly' ? (
+              <input
+                placeholder="Lương/giờ"
+                type="number"
+                step="0.01"
+                value={hourlyRate}
+                onChange={(e) => setHourlyRate(e.target.value)}
+                required
+              />
+            ) : (
+              <input
+                placeholder="Lương tháng"
+                type="number"
+                step="0.01"
+                value={monthlySalary}
+                onChange={(e) => setMonthlySalary(e.target.value)}
+                required
+              />
+            )}
             <button type="submit">Tạo mới</button>
           </div>
         </form>
       )}
 
       {/* Employees Table */}
-      <h2 style={{ margin: 0, marginBottom: '0.5rem' }}>Danh sách nhân viên</h2>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+        <h2 style={{ margin: 0 }}>Danh sách nhân viên</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <label style={{ fontSize: '13px', color: '#666' }}>Tháng:</label>
+          <input
+            type="month"
+            value={hoursMonth}
+            onChange={(e) => setHoursMonth(e.target.value)}
+            style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '13px' }}
+          />
+        </div>
+      </div>
       {loading ? (
         <p>Đang tải...</p>
       ) : employees.length === 0 ? (
@@ -191,55 +251,87 @@ function EmployeePage({ token }: EmployeePageProps) {
               <th>ID</th>
               <th>Họ và tên</th>
               <th>Vai trò</th>
-              <th>Lương/giờ</th>
+              <th>Loại</th>
+              <th>Mức lương</th>
+              <th>Giờ làm tháng này</th>
+              <th>Tổng lương tháng này</th>
               <th>Thao tác</th>
             </tr>
           </thead>
           <tbody>
-            {employees.map((emp) => (
-              <tr key={emp.id}>
-                <td>{emp.id}</td>
-                <td><strong>{emp.name}</strong></td>
-                <td>{emp.role}</td>
-                <td>{emp.hourly_rate}</td>
-                <td>
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    {token && (
-                      <>
-                        <button
-                          onClick={() => handleEditEmployee(emp)}
-                          style={{
-                            padding: '0.25rem 0.75rem',
-                            backgroundColor: '#4CAF50',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '12px',
-                          }}
-                        >
-                          Sửa
-                        </button>
-                        <button
-                          onClick={() => setDeletingEmployee(emp)}
-                          style={{
-                            padding: '0.25rem 0.75rem',
-                            backgroundColor: '#f44336',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '12px',
-                          }}
-                        >
-                          Xóa
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {employees.map((emp) => {
+              const hoursColor = emp.hours_worked_this_month !== null && emp.hours_worked_this_month >= 160
+                ? '#2e7d32'
+                : emp.hours_worked_this_month !== null && emp.hours_worked_this_month >= 80
+                ? '#e65100'
+                : emp.hours_worked_this_month !== null && emp.hours_worked_this_month > 0
+                ? '#c62828'
+                : '#aaa'
+              return (
+                <tr key={emp.id}>
+                  <td>{emp.id}</td>
+                  <td><strong>{emp.name}</strong></td>
+                  <td>{emp.role}</td>
+                  <td>{emp.pay_type === 'Salary' ? 'Lương tháng' : 'Theo giờ'}</td>
+                  <td>
+                    {emp.pay_type === 'Salary'
+                      ? (emp.monthly_salary ? `${Number(emp.monthly_salary).toLocaleString()}₫/tháng` : <span style={{ color: '#aaa' }}>—</span>)
+                      : (emp.hourly_rate ? `${Number(emp.hourly_rate).toLocaleString()}₫/giờ` : <span style={{ color: '#aaa' }}>—</span>)
+                    }
+                  </td>
+                  <td style={{ color: hoursColor, fontWeight: 'bold' }}>
+                    {emp.pay_type === 'Salary'
+                      ? <span style={{ color: '#aaa', fontWeight: 'normal' }}>—</span>
+                      : (emp.hours_worked_this_month !== null
+                          ? `${emp.hours_worked_this_month.toFixed(1)}h`
+                          : <span style={{ color: '#aaa', fontWeight: 'normal' }}>—</span>)
+                    }
+                  </td>
+                  <td style={{ fontWeight: 'bold' }}>
+                    {emp.total_salary_this_month
+                      ? `${Number(emp.total_salary_this_month).toLocaleString()}₫`
+                      : <span style={{ color: '#aaa', fontWeight: 'normal' }}>—</span>
+                    }
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {token && (
+                        <>
+                          <button
+                            onClick={() => handleEditEmployee(emp)}
+                            style={{
+                              padding: '0.25rem 0.75rem',
+                              backgroundColor: '#4CAF50',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                            }}
+                          >
+                            Sửa
+                          </button>
+                          <button
+                            onClick={() => setDeletingEmployee(emp)}
+                            style={{
+                              padding: '0.25rem 0.75rem',
+                              backgroundColor: '#f44336',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                            }}
+                          >
+                            Xóa
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       )}
@@ -250,10 +342,14 @@ function EmployeePage({ token }: EmployeePageProps) {
           employee={editingEmployee}
           name={editName}
           role={editRole}
+          payType={editPayType}
           hourlyRate={editHourlyRate}
+          monthlySalary={editMonthlySalary}
           onNameChange={setEditName}
           onRoleChange={setEditRole}
+          onPayTypeChange={setEditPayType}
           onHourlyRateChange={setEditHourlyRate}
+          onMonthlySalaryChange={setEditMonthlySalary}
           onSave={handleSaveEdit}
           onClose={() => setEditingEmployee(null)}
         />
