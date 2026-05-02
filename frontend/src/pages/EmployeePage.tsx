@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import EditEmployeeModal from '../components/EditEmployeeModal'
 import DeleteConfirmModal from '../components/DeleteConfirmModal'
-import { getApiBase } from '../api'
+import { getApiBase, parseApiError, parseJsonResponse } from '../api'
 
 interface Employee {
   id: number
@@ -62,7 +62,7 @@ function EmployeePage({ token }: EmployeePageProps) {
         : `${API_BASE}/employees`
       const res = await fetch(url)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
+      const data = await parseJsonResponse<Employee[]>(res)
       setEmployees(data)
       setError(null)
     } catch (e) {
@@ -103,8 +103,7 @@ function EmployeePage({ token }: EmployeePageProps) {
         body: JSON.stringify(body),
       })
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || `HTTP ${res.status}`)
+        throw new Error(await parseApiError(res))
       }
       setEditingEmployee(null)
       await fetchEmployees()
@@ -124,8 +123,7 @@ function EmployeePage({ token }: EmployeePageProps) {
         },
       })
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || `HTTP ${res.status}`)
+        throw new Error(await parseApiError(res))
       }
       setDeletingEmployee(null)
       await fetchEmployees()
@@ -161,8 +159,7 @@ function EmployeePage({ token }: EmployeePageProps) {
         body: JSON.stringify(body),
       })
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || `HTTP ${res.status}`)
+        throw new Error(await parseApiError(res))
       }
       setName('')
       setHourlyRate('')

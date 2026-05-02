@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { useState, useRef, useEffect } from 'react';
-import { getApiBase } from '../api';
+import { getApiBase, parseApiError, parseJsonResponse } from '../api';
 
 const API_BASE = getApiBase();
 
@@ -41,11 +41,10 @@ export default function LoginPopup({ onLogin }: LoginPopupProps) {
       });
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Đăng nhập thất bại');
+        throw new Error(await parseApiError(response));
       }
 
-      const data = await response.json();
+      const data = await parseJsonResponse<{ token: string }>(response);
       onLogin(data.token);
       setIsOpen(false);
       setUsername('');

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { getApiBase } from '../api'
+import { getApiBase, parseApiError, parseJsonResponse } from '../api'
 
 interface Employee {
   id: number
@@ -122,7 +122,7 @@ function AttendancePage() {
       setLoading(true)
       const res = await fetch(`${API_BASE}/employees`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
+      const data = await parseJsonResponse<Employee[]>(res)
       setEmployees(data)
       setError(null)
     } catch (e) {
@@ -139,7 +139,7 @@ function AttendancePage() {
         : `${API_BASE}/attendance`
       const res = await fetch(url)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
+      const data = await parseJsonResponse<AttendanceRecord[]>(res)
       setAttendance(data)
     } catch (_e) {
       // Don't block UI on attendance fetch failure
@@ -150,7 +150,7 @@ function AttendancePage() {
     try {
       const res = await fetch(`${API_BASE}/attendance?month=${encodeURIComponent(month)}`)
       if (!res.ok) return
-      const data = await res.json()
+      const data = await parseJsonResponse<AttendanceRecord[]>(res)
       setMonthAttendance(data)
     } catch (_e) {
       // silent
@@ -165,7 +165,7 @@ function AttendancePage() {
         : `${API_BASE}/employees/${employeeId}/attendance`
       const res = await fetch(url)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
+      const data = await parseJsonResponse<AttendanceRecord[]>(res)
       setEmployeeAttendance(data)
     } catch (_e) {
       setEmployeeAttendance([])
@@ -184,8 +184,7 @@ function AttendancePage() {
         body: JSON.stringify(body),
       })
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || `HTTP ${res.status}`)
+        throw new Error(await parseApiError(res))
       }
       await fetchAttendance(attendanceDate)
       await fetchMonthlyAttendance(hoursMonth)
@@ -208,8 +207,7 @@ function AttendancePage() {
         body: JSON.stringify(body),
       })
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || `HTTP ${res.status}`)
+        throw new Error(await parseApiError(res))
       }
       await fetchAttendance(attendanceDate)
       await fetchMonthlyAttendance(hoursMonth)
