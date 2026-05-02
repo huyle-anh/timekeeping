@@ -147,4 +147,15 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: |
+            artifacts/timekeeping-linux-x86_64/timekeeping-linux-x86_64
+            artifacts/timekeeping-windows-x86_64.exe/timekeeping-windows-x86_64.exe
+            artifacts/timekeeping-macos-x86_64/timekeeping-macos-x86_64
+            artifacts/timekeeping-macos-aarch64/timekeeping-macos-aarch64
+            artifacts/desktop-ubuntu/**/*.AppImage
+            artifacts/desktop-ubuntu/**/*.deb
+            artifacts/desktop-ubuntu/**/*.rpm
+            artifacts/desktop-windows/**/*.msi
+            artifacts/desktop-windows/**/*.exe
+            artifacts/desktop-macos/**/*.dmg
+            artifacts/desktop-macos/**/*.app.tar.gz
