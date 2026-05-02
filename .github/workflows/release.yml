@@ -8,6 +8,10 @@ on:
         required: true
         default: 'true'
         type: boolean
+      release_tag:
+        description: 'Release tag for manual runs (e.g. v0.1.1)'
+        required: false
+        type: string
   push:
     tags: ['v*']
 
@@ -137,9 +141,23 @@ jobs:
   release:
     needs: [build, desktop]
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
     permissions:
       contents: write
     steps:
+      - name: Resolve release tag
+        id: release_tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.release_tag }}" ]; then
+            echo "tag=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "Manual run requires 'release_tag' input (e.g. v0.1.1)" >&2
+            exit 1
+          fi
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -147,6 +165,8 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: |
             artifacts/timekeeping-linux-x86_64/timekeeping-linux-x86_64
             artifacts/timekeeping-windows-x86_64.exe/timekeeping-windows-x86_64.exe
